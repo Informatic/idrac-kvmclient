@@ -39,7 +39,7 @@ class VNCHandler(socketserver.BaseRequestHandler):
             if y + h > resy:
                 h = resy - y
                 chunkdata = chunkdata[:w*h*4]
-            frame += struct.pack('>HHHHI',
+            frame += struct.pack('>HHHHi',
                                  x,
                                  y,
                                  w,
@@ -55,29 +55,13 @@ class VNCHandler(socketserver.BaseRequestHandler):
         else:
             if (self.res_x, self.res_y) != (resx, resy):
                 print('***Resolution change***')
+                self.request.sendall(struct.pack('>BxHHHHHi',
+                                                 0, 1,
+                                                 0, 0, resx, resy,
+                                                 -223))
+                self.res_x = resx
+                self.res_y = resy
 
-            self.request.sendall(frame)
-
-    def on_chunk(self, x, y, w, h, chunk):
-        print('on_chunk(%d, %d, %d, %d)' % (x, y, w, h))
-
-        # FramebufferUpdate
-        frame = struct.pack('>BxHHHHHI',
-                            0,
-                            1,
-                            x,
-                            y,
-                            w,
-                            h,
-                            0,
-                            ) + rgb555_to_rgb888(chunk)
-
-        if not self.connected.is_set():
-            self.res_x = w
-            self.res_y = h
-            self.first_frame = frame
-            self.connected.set()
-        else:
             self.request.sendall(frame)
 
     def handle(self):
