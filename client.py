@@ -86,6 +86,8 @@ class KVMClient:
         self.fb = None
         self.running = True
 
+        self.logger = logging.getLogger('client.KVMClient')
+
     @classmethod
     def from_arguments(cls, arguments):
         return cls(
@@ -126,8 +128,16 @@ class KVMClient:
 
     def stop(self):
         self.running = False
-        self.video_socket.close()
-        self.kvm_socket.close()
+
+        try:
+            self.video_socket.close()
+        except:
+            pass
+
+        try:
+            self.kvm_socket.close()
+        except:
+            pass
 
     def process_socket(self, sock):
         hdr = sock.recv(7)
@@ -136,9 +146,9 @@ class KVMClient:
 
         msg_type, msg_len, status = struct.unpack('<BIH', hdr)
 
-        print('[%02x %30s / %7d / %08x] %r' % (
-            msg_type, rev_types.get(msg_type, None), msg_len, status,
-            sock.getpeername()))
+        self.logger.debug('[%02x %30s / %7d / %08x] %r',
+                          msg_type, rev_types.get(msg_type, None), msg_len,
+                          status, sock.getpeername())
 
         payload = b''
         while len(payload) < msg_len:
@@ -156,6 +166,22 @@ class KVMClient:
             elif sock == self.kvm_socket:
                 self.authenticate()
 
+        elif msg_type == 0x10:
+            if status == 0x002:
+                self.logger.info('Waiting for authorization')
+
+            elif status == 0x0001:
+                self.logger.info('Authorization request, approving')
+                # 0x0201 video only
+                # 0x0101 deny
+                # 0x0001 allow
+                self.send_frame(self.video_socket, 0x10, b'', 0x0201)
+
+            elif status == 0x004:
+                self.logger.info('Authorization approved')
+            elif status == 0x104:
+                self.logger.info('Authorization denied')
+
         elif msg_type == 0x12:
             # Keepalive
             self.send_frame(sock, 0x13, b'')
@@ -163,6 +189,12 @@ class KVMClient:
         elif msg_type == 0x03:
             # Video frame fragment
             self.process_video(payload)
+
+        else:
+            self.logger.warning('Unhandled frame %d (%r) on %r', msg_type,
+                                rev_types.get(msg_type, None),
+                                sock.getpeername())
+
 
     def process_video(self, payload):
         hdrsize = 2 + 4 + 2 + 2 + 1
@@ -173,15 +205,16 @@ class KVMClient:
             self.fb = Image.new('RGB', (resx, resy), color='red')
 
         framedata = payload[hdrsize:]
-        print('%04x %08x %04x %04x %02x' % (fragnum, framesize, resx, resy,
-                                            colormode))
+        self.logger.debug('Video frame: %04x %08x %04x %04x %02x',
+                          fragnum, framesize, resx, resy, colormode)
 
         pos = 0
         chunks = []
         while pos < len(framedata):
             x, y, w, h, compression_mode, compressed_length = \
                 struct.unpack('<HHHHII', framedata[pos:pos+16])
-            print('  %dx%d+%d+%d @ %d' % (w, h, x, y, compression_mode))
+            self.logger.debug('  %dx%d+%d+%d @ %d',
+                              w, h, x, y, compression_mode)
             compressed = framedata[pos+16:pos+16+compressed_length]
             pos += 16 + compressed_length
 
@@ -192,7 +225,8 @@ class KVMClient:
             elif compression_mode == 0 and colormode == 8:
                 chunk = compressed
             else:
-                print('** unknown compression **')
+                self.logger.warning('Unknown compression: %02x %02x',
+                                    compression_mode, colormode)
                 continue
 
             if self.on_chunk:
@@ -245,7 +279,7 @@ class KVMClient:
         return bytes(out[out_pos:])
 
     def authenticate(self):
-        print('...authenticating')
+        self.logger.debug('...authenticating')
         self.send_frame(self.video_socket, 0x0c, struct.pack(
             '<B98s47s', 0, self.token.encode(), self.address.encode()))
 

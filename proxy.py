@@ -3,6 +3,7 @@ import struct
 import threading
 import asyncio
 import csv
+import logging
 
 import websockets
 import jwt
@@ -41,9 +42,10 @@ class VNCHandler(object):
         self.ws = ws
         self.path = path
         self.recv_buffer = bytearray()
+        self.logger = logging.getLogger('proxy.VNCHandler')
 
     async def on_frame(self, chunks, resx, resy):
-        print('on_frame(%d, %d, %d)' % (len(chunks), resx, resy))
+        self.logger.debug('on_frame(%d, %d, %d)' % (len(chunks), resx, resy))
 
         frame = struct.pack('>BxH',
                             0,
@@ -70,7 +72,7 @@ class VNCHandler(object):
 
         else:
             if (self.res_x, self.res_y) != (resx, resy):
-                print('***Resolution change***')
+                self.logger.debug('Resolution change detected')
                 await self.send(struct.pack('>BxHHHHHi',
                                             0, 1,
                                             0, 0, resx, resy,
@@ -101,34 +103,36 @@ class VNCHandler(object):
         await self.ws.send(payload)
 
     async def handle(self):
-        print('Incoming conection on %s' % (self.path))
+        self.logger.info('Incoming conection on %s' % (self.path))
         token = self.path.split('/')[-1]
         data = jwt.decode(token, config['jwt_secret'], algorithms=['HS256'])
 
         if 'blade' not in data or data['blade'] < 1 or data['blade'] > 16:
-            print('Invalid data?')
+            self.logger.warning('Invalid data?')
             return
 
         # ProtocolVersion
         await self.send(b'RFB 003.008\n')
-        self.data = (await self.recv()).strip()
-        print(self.data)
+        client_version = (await self.recv()).strip()
+        self.logger.debug('Client version: %s', client_version)
 
         # Security handshake
         await self.send(struct.pack('>BB', 1, 1))
-        print('Security type:', await self.recv(1))
+        client_security = await self.recv(1)
+        self.logger.debug('Security type: %02x', client_security)
 
         # SecurityResult
         await self.send(struct.pack('>I', 0))
 
         # ClientInit
         shared, = struct.unpack('>?', await self.recv(1))
-        print('Shared:', shared)
+        self.logger.debug('Shared: %r', shared)
 
         stub = grpc_connect()
         arguments = stub.GetKVMData(proxy_pb2.GetKVMDataRequest(
             blade_num=data['blade'])).arguments
-        print(arguments)
+
+        self.logger.debug('KVM arguments: %r', arguments)
 
         self.connected = asyncio.Event()
         self.client = KVMClient.from_arguments(arguments)
@@ -138,9 +142,9 @@ class VNCHandler(object):
         self.client_thread = threading.Thread(target=self.client.run)
         self.client_thread.start()
 
-        print('...waiting for connection')
+        self.logger.info('...waiting for connection')
         await self.connected.wait()
-        print('Connected! %d %d', self.res_x, self.res_y)
+        self.logger.info('Connected! %d %d', self.res_x, self.res_y)
 
         # ServerInit
         server_name = b'Test RFB Server'
@@ -160,89 +164,74 @@ class VNCHandler(object):
                                   len(server_name)
                                   ) + server_name
         await self.send(server_init)
-        print(server_init)
 
         while True:
             msg_type = ord(await self.recv(1))
+            if msg_type in self.handlers:
+                fmt, cb = self.handlers[msg_type]
+                payload = await self.recv(struct.calcsize(fmt))
+                data = struct.unpack(fmt, payload)
+                await cb(self, *data)
 
-            if msg_type == 0x00:
-                # SetPixelFormat
-                await self.recv(3)
-                pixel_format = await self.recv(16)
-                print('Pixel format:', struct.unpack('>BBBBHHHBBBxxx', pixel_format))
+    async def handle_SetPixelFormat(self, *pixel_format):
+        # SetPixelFormat
+        self.logger.info('Pixel format: %r', pixel_format)
 
-            elif msg_type == 0x02:
-                # SetEncodings
-                num_enc, = struct.unpack('>xH', await self.recv(3))
-                print('Encodings:', num_enc, await self.recv(4*num_enc))
+    async def handle_SetEncodings(self, num_enc):
+        # SetEncodings
+        self.logger.info('Encodings: %d %r', num_enc,
+                         await self.recv(4*num_enc))
 
-            elif msg_type == 0x03:
-                # UpdateRequest
-                incremental, x, y, w, h = struct.unpack('>BHHHH', await self.recv(9))
-                print('Update request:', incremental, x, y, w, h)
-
-                if self.first_frame:
-                    await self.send(self.first_frame)
-                    self.first_frame = None
-
-            elif msg_type == 0x04:
-                modifiers = {
-                    65507: 0x01,
-                    65508: 0x10,
-                    65505: 0x02,
-                    65506: 0x20,
-                    65513: 0x04,
-                    65027: 0x40,
-                }
-
-                # KeyEvent
-                # LCTRL 65507 = 0x01
-                # RCTRL 65508 = 0x10
-                # LALT 65513 = 0x04
-                # RALT 65027 = 0x40 (not supported?)
-                # LSHIFT 65505 = 0x02
-                # RSHIFT 65506 = 0x20
-
-                # 02 = shift
-                # 01 = ctrl
-                # 04 = alt
-                # 10 = rctrl
-                # 20 = rshift
-                # 40 = ralt ← does not work on lunix?
-
-                down, key = struct.unpack('>BxxI', await self.recv(7))
-                print('Key:', down, key)
-
-                if key in modifiers:
-                    keycode = 0
-
-                    if down:
-                        self.modifiers = self.modifiers | modifiers[key]
-                    else:
-                        self.modifiers = self.modifiers & ~modifiers[key]
-                else:
-                    keycode = self.keymap.get(key)
-
-                if keycode is not None:
-                    print('Sending %04x %02x %02x', keycode, self.modifiers, down)
-                    self.client.send_keyboard(keycode, self.modifiers, down)
-                else:
-                    print('No keycode found :(')
-
-            elif msg_type == 0x05:
-                # PointerEvent
-                mask, x, y = struct.unpack('>BHH', await self.recv(5))
-                print('Pointer:', mask, x, y)
-            else:
-                print('Unknown msg:', msg_type)
+    async def handle_UpdateRequest(self, incremental, x, y, w, h):
+        # UpdateRequest
+        if self.first_frame:
+            await self.send(self.first_frame)
+            self.first_frame = None
 
     modifiers = 0
+    async def handle_KeyEvent(self, down, key):
+        modifiers = {
+            65507: 0x01,  # L CTRL
+            65508: 0x10,  # R CTRL
+            65505: 0x02,  # L SHIFT
+            65506: 0x20,  # R SHIFT
+            65513: 0x04,  # L ALT
+            65027: 0x40,  # R ALT
+        }
+
+        self.logger.debug('Key:', down, key)
+
+        if key in modifiers:
+            keycode = 0
+
+            if down:
+                self.modifiers = self.modifiers | modifiers[key]
+            else:
+                self.modifiers = self.modifiers & ~modifiers[key]
+        else:
+            keycode = self.keymap.get(key)
+
+        if keycode is not None:
+            self.logger.debug('Sending %04x %02x %02x', keycode, self.modifiers, down)
+            self.client.send_keyboard(keycode, self.modifiers, down)
+        else:
+            self.logger.warning('No keycode found for %r %r', down, key)
+
+    async def handle_PointerEvent(self, mask, x, y):
+        self.logger.debug('Pointer: %02x %d %d', mask, x, y)
+
+    handlers = {
+        0x00: ('>xxxBBBBHHHBBBxxx', handle_SetPixelFormat),
+        0x02: ('>xH', handle_SetEncodings),
+        0x03: ('>BHHHH', handle_UpdateRequest),
+        0x04: ('>BxxI', handle_KeyEvent),
+        0x05: ('>BHH', handle_PointerEvent),
+    }
 
     def finish(self):
-        print('...cleanup')
         if self.client:
             self.client.stop()
-        print('cleanup finished')
+        self.logger.debug('cleanup finished')
 
 
 if __name__ == "__main__":
@@ -255,7 +244,8 @@ if __name__ == "__main__":
         finally:
             handler.finish()
 
-    start_server = websockets.serve(handler, HOST, PORT, subprotocols=['binary', ''])
+    start_server = websockets.serve(handler, HOST, PORT,
+                                    subprotocols=['binary', ''])
 
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
