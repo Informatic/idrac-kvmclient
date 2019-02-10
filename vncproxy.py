@@ -1,25 +1,11 @@
-import socketserver
 import struct
 import threading
 import asyncio
 import csv
 import logging
-import os
+import sys
 
-import mimetypes
-import urllib.parse
-from http import HTTPStatus
-
-import websockets
-import jwt
-
-from client import rgb555_to_rgb888, grpc_connect, KVMClient
-import proxy_pb2
-
-
-config = {
-    'jwt_secret': 'secret',
-}
+from client import rgb555_to_rgb888, KVMClient
 
 
 def build_keymap():
@@ -43,11 +29,14 @@ class VNCHandler(object):
     client = None
     keymap = build_keymap()
 
-    def __init__(self, ws, path):
-        self.ws = ws
-        self.path = path
+    def __init__(self, sock, client, loop):
+        self.sock = sock
+        self.client = client
+        self.loop = loop
         self.recv_buffer = bytearray()
         self.logger = logging.getLogger('proxy.VNCHandler')
+        self.connected = asyncio.Event()
+        self.encodings = []
 
     async def on_frame(self, chunks, resx, resy):
         self.logger.debug('on_frame(%d, %d, %d)' % (len(chunks), resx, resy))
@@ -76,7 +65,7 @@ class VNCHandler(object):
             self.connected.set()
 
         else:
-            if (self.res_x, self.res_y) != (resx, resy):
+            if (self.res_x, self.res_y) != (resx, resy) and -223 in self.encodings:
                 self.logger.debug('Resolution change detected')
                 await self.send(struct.pack('>BxHHHHHi',
                                             0, 1,
@@ -90,14 +79,14 @@ class VNCHandler(object):
     async def recv(self, num_bytes=None):
         if num_bytes is None:
             if len(self.recv_buffer) == 0:
-                return await self.ws.recv()
+                return await self.sock.recv()
             else:
                 buf = self.recv_buffer
                 self.recv_buffer = bytearray()
                 return buf
 
         while len(self.recv_buffer) < num_bytes:
-            self.recv_buffer += await self.ws.recv()
+            self.recv_buffer += await self.sock.recv()
 
         chunk = self.recv_buffer[:num_bytes]
         self.recv_buffer = self.recv_buffer[num_bytes:]
@@ -105,17 +94,16 @@ class VNCHandler(object):
         return chunk
 
     async def send(self, payload):
-        await self.ws.send(payload)
+        await self.sock.send(payload)
+
+    def client_run(self):
+        try:
+            self.client.run()
+        finally:
+            asyncio.run_coroutine_threadsafe(self.sock.close(), self.loop)
+            self.connected.set()
 
     async def handle(self):
-        self.logger.info('Incoming conection on %s' % (self.path))
-        token = self.path.split('/')[-1]
-        data = jwt.decode(token, config['jwt_secret'], algorithms=['HS256'])
-
-        if 'blade' not in data or data['blade'] < 1 or data['blade'] > 16:
-            self.logger.warning('Invalid data?')
-            return
-
         # ProtocolVersion
         await self.send(b'RFB 003.008\n')
         client_version = (await self.recv()).strip()
@@ -133,18 +121,9 @@ class VNCHandler(object):
         shared, = struct.unpack('>?', await self.recv(1))
         self.logger.debug('Shared: %r', shared)
 
-        stub = grpc_connect()
-        arguments = stub.GetKVMData(proxy_pb2.GetKVMDataRequest(
-            blade_num=data['blade'])).arguments
-
-        self.logger.debug('KVM arguments: %r', arguments)
-
-        self.connected = asyncio.Event()
-        self.client = KVMClient.from_arguments(arguments)
-        loop = asyncio.get_event_loop()
         self.client.on_frame = lambda *args: asyncio.run_coroutine_threadsafe(
             self.on_frame(*args), loop)
-        self.client_thread = threading.Thread(target=self.client.run)
+        self.client_thread = threading.Thread(target=self.client_run)
         self.client_thread.start()
 
         self.logger.info('...waiting for connection')
@@ -184,8 +163,10 @@ class VNCHandler(object):
 
     async def handle_SetEncodings(self, num_enc):
         # SetEncodings
+        self.encodings = struct.unpack('>%di' % num_enc,
+                                       await self.recv(4*num_enc))
         self.logger.info('Encodings: %d %r', num_enc,
-                         await self.recv(4*num_enc))
+                         self.encodings)
 
     async def handle_UpdateRequest(self, incremental, x, y, w, h):
         # UpdateRequest
@@ -236,45 +217,48 @@ class VNCHandler(object):
     def finish(self):
         if self.client:
             self.client.stop()
-        self.logger.debug('cleanup finished')
+        self.logger.info('cleanup finished')
 
 
-if __name__ == "__main__":
-    HOST, PORT = "0.0.0.0", 8081
+class WrappedSocket(object):
+    """
+    Makes asyncio reader and writer pair behave like websockets WebSocket
+    connection (which is our primary target)
+    """
+    def __init__(self, reader, writer):
+        self.reader = reader
+        self.writer = writer
+        self.pending_recv = None
+        self.closed = False
 
-    async def handler(websocket, path):
-        handler = VNCHandler(websocket, path)
+    async def recv(self, num=1024):
+        self.pending_recv = asyncio.ensure_future(self.reader.read(num))
+        return await self.pending_recv
+
+    async def send(self, data):
+        self.writer.write(data)
+        await self.writer.drain()
+
+    async def close(self):
+        self.writer.close()
+        if self.pending_recv:
+            self.pending_recv.cancel()
+
+
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+
+    async def handle_vnc(reader, writer):
+        sock = WrappedSocket(reader, writer)
+        client = KVMClient.from_arguments(sys.argv[1:])
+        handler = VNCHandler(sock, client, loop)
+
         try:
             await handler.handle()
         finally:
             handler.finish()
 
-    def serve_static(path):
-        base = os.path.abspath(path)
-        mimetypes.init()
 
-        async def handler(path, headers):
-            path = urllib.parse.urlparse(path).path
-            if path == '/':
-                path = 'index.html'
-            else:
-                path = path[1:]
-
-            target = os.path.abspath(os.path.join(base, path))
-            print(target)
-            if not target.startswith(base) or not os.path.exists(target):
-                return None
-
-            with open(target, 'rb') as fd:
-                return HTTPStatus.OK, {
-                    'content-type': mimetypes.guess_type(path)[0],
-                }, fd.read()
-
-        return handler
-
-    start_server = websockets.serve(
-        handler, HOST, PORT, subprotocols=['binary', ''],
-        process_request=serve_static('./noVNC-1.0.0/'))
-
-    asyncio.get_event_loop().run_until_complete(start_server)
-    asyncio.get_event_loop().run_forever()
+    vnc_server = asyncio.start_server(handle_vnc, '127.0.0.1', 5902, loop=loop)
+    loop.run_until_complete(vnc_server)
+    loop.run_forever()
