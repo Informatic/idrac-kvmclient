@@ -23,6 +23,10 @@ def build_keymap():
 
 
 class VNCHandler(object):
+    """
+    Naive VNC server-proxy implementation to be used with KVMClient.
+    """
+
     first_frame = None
     res_x = 0
     res_y = 0
@@ -65,7 +69,8 @@ class VNCHandler(object):
             self.connected.set()
 
         else:
-            if (self.res_x, self.res_y) != (resx, resy) and -223 in self.encodings:
+            if (self.res_x, self.res_y) != (resx, resy) \
+                    and -223 in self.encodings:
                 self.logger.debug('Resolution change detected')
                 await self.send(struct.pack('>BxHHHHHi',
                                             0, 1,
@@ -121,6 +126,7 @@ class VNCHandler(object):
         shared, = struct.unpack('>?', await self.recv(1))
         self.logger.debug('Shared: %r', shared)
 
+        # Execute callbacks in asynctio thread...
         self.client.on_frame = lambda *args: asyncio.run_coroutine_threadsafe(
             self.on_frame(*args), loop)
         self.client_thread = threading.Thread(target=self.client_run)
@@ -198,7 +204,8 @@ class VNCHandler(object):
             keycode = self.keymap.get(key)
 
         if keycode is not None:
-            self.logger.debug('Sending %04x %02x %02x', keycode, self.modifiers, down)
+            self.logger.debug('Sending %04x %02x %02x',
+                              keycode, self.modifiers, down)
             self.client.send_keyboard(keycode, self.modifiers, down)
         else:
             self.logger.warning('No keycode found for %r %r', down, key)
@@ -257,7 +264,6 @@ if __name__ == '__main__':
             await handler.handle()
         finally:
             handler.finish()
-
 
     vnc_server = asyncio.start_server(handle_vnc, '127.0.0.1', 5902, loop=loop)
     loop.run_until_complete(vnc_server)

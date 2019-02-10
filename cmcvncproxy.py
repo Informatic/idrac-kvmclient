@@ -22,6 +22,11 @@ config = {
 
 
 def serve_static(path):
+    """
+    Returns a static files server for specified path to be used as
+    `process_request` handler with websockets
+    """
+
     base = os.path.abspath(path)
     mimetypes.init()
 

@@ -5,20 +5,15 @@ import sys
 import select
 import struct
 import logging
-import time
-import binascii
 import errno
 from functools import reduce
 
 from PIL import Image
 
-import grpc
-import proxy_pb2
-import proxy_pb2_grpc
 
 logging.basicConfig(level=logging.INFO)
 
-frame_types = {
+FRAME_TYPES = {
     'ADVISER_LOGIN': 1,
     'DUMMY_LOGIN': 2,
     'ADVISER_VIDEO_FRAGMENT': 3,
@@ -45,21 +40,24 @@ frame_types = {
     'ADVISER_KEEPALIVE_REQ_HID': 24,
     'ADVISER_KEEPALIVE_RES_HID': 25,
 
-    #'ADVISER_SERVER_POWER_SUCCESS': 1,
-    #'ADVISER_SERVER_POWER_FAILURE': 2,
-    #'ADVISER_SERVER_POWER_ON': 1,
-    #'ADVISER_SERVER_POWER_OFF': 2,
-    #'ADVISER_SERVER_NMI': 3,
-    #'ADVISER_SERVER_GRACEFUL_SHUTDOWN': 4,
-    #'ADVISER_SERVER_RESET': 5,
-    #'ADVISER_SERVER_POWER_CYCLE': 6,
+    # 'ADVISER_SERVER_POWER_SUCCESS': 1,
+    # 'ADVISER_SERVER_POWER_FAILURE': 2,
+    # 'ADVISER_SERVER_POWER_ON': 1,
+    # 'ADVISER_SERVER_POWER_OFF': 2,
+    # 'ADVISER_SERVER_NMI': 3,
+    # 'ADVISER_SERVER_GRACEFUL_SHUTDOWN': 4,
+    # 'ADVISER_SERVER_RESET': 5,
+    # 'ADVISER_SERVER_POWER_CYCLE': 6,
 }
 
-rev_types = {v: k for k, v in frame_types.items()}
+REV_FRAME_TYPES = {v: k for k, v in FRAME_TYPES.items()}
 
 
 # Convert RGB555 to RGB888
 def rgb555_to_rgb888(data):
+    """
+    Converts RGB555 to (vnc-compatible) RGB888
+    """
     out = bytearray()
 
     for b in struct.unpack('<%dH' % (len(data)/2), data):
@@ -72,6 +70,9 @@ def rgb555_to_rgb888(data):
 
 
 class KVMClient:
+    """
+    JViewer.jar-compatible iDRAC/AMI KVM client implementation
+    """
     on_chunk = None
     on_frame = None
 
@@ -147,8 +148,8 @@ class KVMClient:
         msg_type, msg_len, status = struct.unpack('<BIH', hdr)
 
         self.logger.debug('[%02x %30s / %7d / %08x] %r',
-                          msg_type, rev_types.get(msg_type, None), msg_len,
-                          status, sock.getpeername())
+                          msg_type, REV_FRAME_TYPES.get(msg_type, None),
+                          msg_len, status, sock.getpeername())
 
         payload = b''
         while len(payload) < msg_len:
@@ -192,7 +193,7 @@ class KVMClient:
 
         else:
             self.logger.warning('Unhandled frame %d (%r) on %r', msg_type,
-                                rev_types.get(msg_type, None),
+                                REV_FRAME_TYPES.get(msg_type, None),
                                 sock.getpeername())
 
 
@@ -234,9 +235,9 @@ class KVMClient:
 
             chunks.append((x, y, w, h, chunk))
 
-            #chunk_image = Image.frombytes('RGB', (w, h),
+            # chunk_image = Image.frombytes('RGB', (w, h),
             #                              rgb555_to_rgb888(chunk))
-            #self.fb.paste(chunk_image, (x, y))
+            # self.fb.paste(chunk_image, (x, y))
 
         if self.on_frame:
             self.on_frame(chunks, resx, resy)
@@ -315,28 +316,8 @@ class KVMClient:
         self.send_frame(self.kvm_socket, 0x04, payload)
 
 
-def read_key(name):
-    with open('/home/informatic/gopath/src/code.hackerspace.pl/hscloud/go/svc/cmc-proxy/pki/%s' % name, 'rb') as fd:
-        return fd.read()
-
-def grpc_connect():
-    credentials = grpc.ssl_channel_credentials(
-        root_certificates=read_key('ca.pem'),
-        private_key=read_key('service-key.pem'),
-        certificate_chain=read_key('service.pem'))
-    channel = grpc.secure_channel('cmc-proxy.dev.svc.cluster.local:4200', credentials)
-    stub = proxy_pb2_grpc.CMCProxyStub(channel)
-    return stub
-
-
 if __name__ == '__main__':
-    if len(sys.argv) == 2:
-        stub = grpc_connect()
-        arguments = stub.GetKVMData(proxy_pb2.GetKVMDataRequest(
-            blade_num=int(sys.argv[1]))).arguments
-        print(arguments)
-    else:
-        arguments = sys.argv[1:]
+    arguments = sys.argv[1:]
 
     client = KVMClient.from_arguments(arguments)
     client.run()
