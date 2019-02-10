@@ -1,11 +1,20 @@
 import socketserver
 import struct
 import threading
+import asyncio
+import csv
+
+import websockets
+import jwt
 
 from client import rgb555_to_rgb888, grpc_connect, KVMClient
 import proxy_pb2
 
-import csv
+
+config = {
+    'jwt_secret': 'secret',
+}
+
 
 def build_keymap():
     keymap = {}
@@ -16,18 +25,24 @@ def build_keymap():
         for row in reader:
             r = dict(zip(headers, row))
             if r['USB Keycodes'] and r['X11 keysym']:
-                keymap[int(r['X11 keysym'][2:],16)] = int(r['USB Keycodes'])
+                keymap[int(r['X11 keysym'][2:], 16)] = int(r['USB Keycodes'])
 
     return keymap
 
-class VNCHandler(socketserver.BaseRequestHandler):
+
+class VNCHandler(object):
     first_frame = None
     res_x = 0
     res_y = 0
     client = None
     keymap = build_keymap()
 
-    def on_frame(self, chunks, resx, resy):
+    def __init__(self, ws, path):
+        self.ws = ws
+        self.path = path
+        self.recv_buffer = bytearray()
+
+    async def on_frame(self, chunks, resx, resy):
         print('on_frame(%d, %d, %d)' % (len(chunks), resx, resy))
 
         frame = struct.pack('>BxH',
@@ -52,50 +67,80 @@ class VNCHandler(socketserver.BaseRequestHandler):
             self.res_y = resy
             self.first_frame = frame
             self.connected.set()
+
         else:
             if (self.res_x, self.res_y) != (resx, resy):
                 print('***Resolution change***')
-                self.request.sendall(struct.pack('>BxHHHHHi',
-                                                 0, 1,
-                                                 0, 0, resx, resy,
-                                                 -223))
+                await self.send(struct.pack('>BxHHHHHi',
+                                            0, 1,
+                                            0, 0, resx, resy,
+                                            -223))
                 self.res_x = resx
                 self.res_y = resy
 
-            self.request.sendall(frame)
+            await self.send(frame)
 
-    def handle(self):
-        print('Incoming conection from %r', self.client_address)
+    async def recv(self, num_bytes=None):
+        if num_bytes is None:
+            if len(self.recv_buffer) == 0:
+                return await self.ws.recv()
+            else:
+                buf = self.recv_buffer
+                self.recv_buffer = bytearray()
+                return buf
+
+        while len(self.recv_buffer) < num_bytes:
+            self.recv_buffer += await self.ws.recv()
+
+        chunk = self.recv_buffer[:num_bytes]
+        self.recv_buffer = self.recv_buffer[num_bytes:]
+
+        return chunk
+
+    async def send(self, payload):
+        await self.ws.send(payload)
+
+    async def handle(self):
+        print('Incoming conection on %s' % (self.path))
+        token = self.path.split('/')[-1]
+        data = jwt.decode(token, config['jwt_secret'], algorithms=['HS256'])
+
+        if 'blade' not in data or data['blade'] < 1 or data['blade'] > 16:
+            print('Invalid data?')
+            return
+
         # ProtocolVersion
-        self.request.sendall(b'RFB 003.008\n')
-        self.data = self.request.recv(1024).strip()
-        print("{} wrote:".format(self.client_address[0]))
+        await self.send(b'RFB 003.008\n')
+        self.data = (await self.recv()).strip()
         print(self.data)
 
         # Security handshake
-        self.request.send(struct.pack('>BB', 1, 1))
-        print('Security type:', self.request.recv(1))
+        await self.send(struct.pack('>BB', 1, 1))
+        print('Security type:', await self.recv(1))
 
         # SecurityResult
-        self.request.send(struct.pack('>I', 0))
+        await self.send(struct.pack('>I', 0))
 
         # ClientInit
-        shared, = struct.unpack('>?', self.request.recv(1))
+        shared, = struct.unpack('>?', await self.recv(1))
         print('Shared:', shared)
 
         stub = grpc_connect()
         arguments = stub.GetKVMData(proxy_pb2.GetKVMDataRequest(
-            blade_num=10)).arguments
+            blade_num=data['blade'])).arguments
         print(arguments)
 
-        self.connected = threading.Event()
+        self.connected = asyncio.Event()
         self.client = KVMClient.from_arguments(arguments)
-        self.client.on_frame = self.on_frame
+        loop = asyncio.get_event_loop()
+        self.client.on_frame = lambda *args: asyncio.run_coroutine_threadsafe(
+            self.on_frame(*args), loop)
         self.client_thread = threading.Thread(target=self.client.run)
         self.client_thread.start()
 
         print('...waiting for connection')
-        self.connected.wait()
+        await self.connected.wait()
+        print('Connected! %d %d', self.res_x, self.res_y)
 
         # ServerInit
         server_name = b'Test RFB Server'
@@ -109,35 +154,35 @@ class VNCHandler(socketserver.BaseRequestHandler):
                                   0xff,  # max rgb
                                   0xff,
                                   0xff,
-                                  0,  # shift rgb
-                                  0,
+                                  16,  # shift rgb
+                                  8,
                                   0,
                                   len(server_name)
                                   ) + server_name
-        self.request.sendall(server_init)
+        await self.send(server_init)
         print(server_init)
 
         while True:
-            msg_type = ord(self.request.recv(1))
+            msg_type = ord(await self.recv(1))
 
             if msg_type == 0x00:
                 # SetPixelFormat
-                self.request.recv(3)
-                pixel_format = self.request.recv(16)
+                await self.recv(3)
+                pixel_format = await self.recv(16)
                 print('Pixel format:', struct.unpack('>BBBBHHHBBBxxx', pixel_format))
 
             elif msg_type == 0x02:
                 # SetEncodings
-                num_enc, = struct.unpack('>xH', self.request.recv(3))
-                print('Encodings:', num_enc, self.request.recv(4*num_enc))
+                num_enc, = struct.unpack('>xH', await self.recv(3))
+                print('Encodings:', num_enc, await self.recv(4*num_enc))
 
             elif msg_type == 0x03:
                 # UpdateRequest
-                incremental, x, y, w, h = struct.unpack('>BHHHH', self.request.recv(9))
+                incremental, x, y, w, h = struct.unpack('>BHHHH', await self.recv(9))
                 print('Update request:', incremental, x, y, w, h)
 
                 if self.first_frame:
-                    self.request.sendall(self.first_frame)
+                    await self.send(self.first_frame)
                     self.first_frame = None
 
             elif msg_type == 0x04:
@@ -165,7 +210,7 @@ class VNCHandler(socketserver.BaseRequestHandler):
                 # 20 = rshift
                 # 40 = ralt ← does not work on lunix?
 
-                down, key = struct.unpack('>BxxI', self.request.recv(7))
+                down, key = struct.unpack('>BxxI', await self.recv(7))
                 print('Key:', down, key)
 
                 if key in modifiers:
@@ -186,7 +231,7 @@ class VNCHandler(socketserver.BaseRequestHandler):
 
             elif msg_type == 0x05:
                 # PointerEvent
-                mask, x, y = struct.unpack('>BHH', self.request.recv(5))
+                mask, x, y = struct.unpack('>BHH', await self.recv(5))
                 print('Pointer:', mask, x, y)
             else:
                 print('Unknown msg:', msg_type)
@@ -199,13 +244,18 @@ class VNCHandler(socketserver.BaseRequestHandler):
             self.client.stop()
         print('cleanup finished')
 
+
 if __name__ == "__main__":
-    HOST, PORT = "localhost", 5902
+    HOST, PORT = "0.0.0.0", 8081
 
-    # Create the server, binding to localhost on port 9999
-    socketserver.TCPServer.allow_reuse_address = True
-    server = socketserver.TCPServer((HOST, PORT), VNCHandler)
+    async def handler(websocket, path):
+        handler = VNCHandler(websocket, path)
+        try:
+            await handler.handle()
+        finally:
+            handler.finish()
 
-    # Activate the server; this will keep running until you
-    # interrupt the program with Ctrl-C
-    server.serve_forever()
+    start_server = websockets.serve(handler, HOST, PORT, subprotocols=['binary', ''])
+
+    asyncio.get_event_loop().run_until_complete(start_server)
+    asyncio.get_event_loop().run_forever()

@@ -16,7 +16,7 @@ import grpc
 import proxy_pb2
 import proxy_pb2_grpc
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 frame_types = {
     'ADVISER_LOGIN': 1,
