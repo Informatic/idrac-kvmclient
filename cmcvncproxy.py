@@ -1,3 +1,8 @@
+#
+# Work-in-progress jwt-authz/authn'ed websocket VNC server integrated with
+# hscloud/cmc-proxy (Warsaw Hackerspace Dell M1000e management)
+#
+
 import os
 import mimetypes
 from http.server import HTTPStatus
