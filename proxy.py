@@ -4,6 +4,11 @@ import threading
 import asyncio
 import csv
 import logging
+import os
+
+import mimetypes
+import urllib.parse
+from http import HTTPStatus
 
 import websockets
 import jwt
@@ -244,8 +249,32 @@ if __name__ == "__main__":
         finally:
             handler.finish()
 
-    start_server = websockets.serve(handler, HOST, PORT,
-                                    subprotocols=['binary', ''])
+    def serve_static(path):
+        base = os.path.abspath(path)
+        mimetypes.init()
+
+        async def handler(path, headers):
+            path = urllib.parse.urlparse(path).path
+            if path == '/':
+                path = 'index.html'
+            else:
+                path = path[1:]
+
+            target = os.path.abspath(os.path.join(base, path))
+            print(target)
+            if not target.startswith(base) or not os.path.exists(target):
+                return None
+
+            with open(target, 'rb') as fd:
+                return HTTPStatus.OK, {
+                    'content-type': mimetypes.guess_type(path)[0],
+                }, fd.read()
+
+        return handler
+
+    start_server = websockets.serve(
+        handler, HOST, PORT, subprotocols=['binary', ''],
+        process_request=serve_static('./noVNC-1.0.0/'))
 
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
