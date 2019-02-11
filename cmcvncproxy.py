@@ -73,6 +73,7 @@ def grpc_connect():
 if __name__ == "__main__":
     HOST, PORT = "0.0.0.0", 8081
     logger = logging.getLogger('proxy')
+    loop = asyncio.get_event_loop()
 
     async def handler(websocket, path):
         logger.info('Incoming conection on %s' % path)
@@ -91,7 +92,7 @@ if __name__ == "__main__":
 
         client = KVMClient.from_arguments(arguments)
 
-        handler = VNCHandler(websocket, client)
+        handler = VNCHandler(websocket, client, loop)
         try:
             await handler.handle()
         finally:
@@ -101,5 +102,5 @@ if __name__ == "__main__":
         handler, HOST, PORT, subprotocols=['binary', ''],
         process_request=serve_static('./noVNC-1.0.0/'))
 
-    asyncio.get_event_loop().run_until_complete(start_server)
-    asyncio.get_event_loop().run_forever()
+    loop.run_until_complete(start_server)
+    loop.run_forever()

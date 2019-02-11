@@ -128,7 +128,7 @@ class VNCHandler(object):
 
         # Execute callbacks in asynctio thread...
         self.client.on_frame = lambda *args: asyncio.run_coroutine_threadsafe(
-            self.on_frame(*args), loop)
+            self.on_frame(*args), self.loop)
         self.client_thread = threading.Thread(target=self.client_run)
         self.client_thread.start()
 
