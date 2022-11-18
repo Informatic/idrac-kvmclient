@@ -20,11 +20,15 @@ command line arguments as JViewer.jar, ie. (these can be extracted from
 
     1.2.3.4 5901 abcdefABCDEF1234 1 0 3668 3669 511 5900 1 EN
 
-...and connect to `localhost:5902`. This is still pretty much all work in
+...and connect to `localhost:5900`. This is still pretty much all work in
 progress, and only video & keyboard is supported, VNC server is approx. 21.37%
 protocol specification compliant, but at least seems to work "good enough" with
 NoVNC, Remmina and XVNCViewer (except from minor issues with full screen
 refreshes in the last one)
+
+Simple one-liner to extract relevant arguments from jnlp and launch vncproxy:
+
+    python vncproxy.py $(xmllint --xpath '//argument/text()' jviewer.jnlp)
 
 `client.KVMClient` class is supposed to be more-or-less reusable, but the API is
 far from stable.

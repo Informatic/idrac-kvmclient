@@ -265,6 +265,9 @@ if __name__ == '__main__':
         finally:
             handler.finish()
 
-    vnc_server = asyncio.start_server(handle_vnc, '127.0.0.1', 5902, loop=loop)
+    host, port = '127.0.0.1', 5900
+
+    vnc_server = asyncio.start_server(handle_vnc, host, port)
+    logging.info('Listening on {}:{}'.format(host, port))
     loop.run_until_complete(vnc_server)
     loop.run_forever()

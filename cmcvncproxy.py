@@ -99,7 +99,7 @@ if __name__ == "__main__":
             handler.finish()
 
     start_server = websockets.serve(
-        handler, HOST, PORT, subprotocols=['binary', ''],
+        handler, HOST, PORT, subprotocols=['binary'],
         process_request=serve_static('./noVNC-1.0.0/'))
 
     loop.run_until_complete(start_server)
