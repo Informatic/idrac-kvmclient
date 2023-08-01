@@ -6,12 +6,27 @@ import select
 import struct
 import logging
 import errno
+import os
 from functools import reduce
 
 from PIL import Image
 
+import socks
+
 
 logging.basicConfig(level=logging.INFO)
+
+
+def create_connection(address, timeout=None, source_address=None):
+    sock = socks.socksocket()
+    sock.connect(address)
+    return sock
+
+
+if os.getenv("SOCKS5_PROXY"):
+    proxy_host, _, proxy_port = os.getenv("SOCKS5_PROXY", "").partition(":")
+    logging.info("Using proxy %s:%s", proxy_host, proxy_port)
+    socks.setdefaultproxy(socks.PROXY_TYPE_SOCKS5, proxy_host, int(proxy_port))
 
 FRAME_TYPES = {
     "ADVISER_LOGIN": 1,
@@ -106,7 +121,7 @@ class KVMClient:
         self.ssl_context = ssl._create_unverified_context()
         self.ssl_context.set_ciphers("DEFAULT")
 
-        self.video_socket = socket.create_connection((self.address, self.video_port))
+        self.video_socket = create_connection((self.address, self.video_port))
 
         if self.video_ssl:
             self.video_socket = self.ssl_context.wrap_socket(self.video_socket)
@@ -172,7 +187,7 @@ class KVMClient:
             # Authentication/handshake
             if not self.kvm_socket:
                 self.kvm_socket = self.ssl_context.wrap_socket(
-                    socket.create_connection((self.address, self.kvm_port))
+                    create_connection((self.address, self.kvm_port))
                 )
             elif sock == self.kvm_socket:
                 self.authenticate()

@@ -9,6 +9,7 @@ in
     nativeBuildInputs = [
       (pkgs.python3.withPackages (ps: [
         ps.pillow
+        ps.pysocks
 
         ps.websockets
         ps.pyjwt

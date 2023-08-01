@@ -131,7 +131,7 @@ class VNCHandler(object):
         self.client_thread = threading.Thread(target=self.client_run)
         self.client_thread.start()
 
-        self.logger.info("...waiting for connection")
+        self.logger.info("Connecting...")
         await self.connected.wait()
         self.logger.info("Connected! %d %d", self.res_x, self.res_y)
 
