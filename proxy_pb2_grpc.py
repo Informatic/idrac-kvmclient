@@ -5,42 +5,43 @@ import proxy_pb2 as proxy__pb2
 
 
 class CMCProxyStub(object):
-  # missing associated documentation comment in .proto file
-  pass
+    # missing associated documentation comment in .proto file
+    pass
 
-  def __init__(self, channel):
-    """Constructor.
+    def __init__(self, channel):
+        """Constructor.
 
-    Args:
-      channel: A grpc.Channel.
-    """
-    self.GetKVMData = channel.unary_unary(
-        '/proto.CMCProxy/GetKVMData',
-        request_serializer=proxy__pb2.GetKVMDataRequest.SerializeToString,
-        response_deserializer=proxy__pb2.GetKVMDataResponse.FromString,
+        Args:
+          channel: A grpc.Channel.
+        """
+        self.GetKVMData = channel.unary_unary(
+            "/proto.CMCProxy/GetKVMData",
+            request_serializer=proxy__pb2.GetKVMDataRequest.SerializeToString,
+            response_deserializer=proxy__pb2.GetKVMDataResponse.FromString,
         )
 
 
 class CMCProxyServicer(object):
-  # missing associated documentation comment in .proto file
-  pass
-
-  def GetKVMData(self, request, context):
     # missing associated documentation comment in .proto file
     pass
-    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-    context.set_details('Method not implemented!')
-    raise NotImplementedError('Method not implemented!')
+
+    def GetKVMData(self, request, context):
+        # missing associated documentation comment in .proto file
+        pass
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
 
 def add_CMCProxyServicer_to_server(servicer, server):
-  rpc_method_handlers = {
-      'GetKVMData': grpc.unary_unary_rpc_method_handler(
-          servicer.GetKVMData,
-          request_deserializer=proxy__pb2.GetKVMDataRequest.FromString,
-          response_serializer=proxy__pb2.GetKVMDataResponse.SerializeToString,
-      ),
-  }
-  generic_handler = grpc.method_handlers_generic_handler(
-      'proto.CMCProxy', rpc_method_handlers)
-  server.add_generic_rpc_handlers((generic_handler,))
+    rpc_method_handlers = {
+        "GetKVMData": grpc.unary_unary_rpc_method_handler(
+            servicer.GetKVMData,
+            request_deserializer=proxy__pb2.GetKVMDataRequest.FromString,
+            response_serializer=proxy__pb2.GetKVMDataResponse.SerializeToString,
+        ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+        "proto.CMCProxy", rpc_method_handlers
+    )
+    server.add_generic_rpc_handlers((generic_handler,))

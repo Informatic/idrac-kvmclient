@@ -2,131 +2,155 @@
 # source: proxy.proto
 
 import sys
-_b=sys.version_info[0]<3 and (lambda x:x) or (lambda x:x.encode('latin1'))
+
+_b = sys.version_info[0] < 3 and (lambda x: x) or (lambda x: x.encode("latin1"))
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from google.protobuf import reflection as _reflection
 from google.protobuf import symbol_database as _symbol_database
+
 # @@protoc_insertion_point(imports)
 
 _sym_db = _symbol_database.Default()
 
 
-
-
 DESCRIPTOR = _descriptor.FileDescriptor(
-  name='proxy.proto',
-  package='proto',
-  syntax='proto3',
-  serialized_options=None,
-  serialized_pb=_b('\n\x0bproxy.proto\x12\x05proto\"&\n\x11GetKVMDataRequest\x12\x11\n\tblade_num\x18\x01 \x01(\x03\"\'\n\x12GetKVMDataResponse\x12\x11\n\targuments\x18\x01 \x03(\t2M\n\x08\x43MCProxy\x12\x41\n\nGetKVMData\x12\x18.proto.GetKVMDataRequest\x1a\x19.proto.GetKVMDataResponseb\x06proto3')
+    name="proxy.proto",
+    package="proto",
+    syntax="proto3",
+    serialized_options=None,
+    serialized_pb=_b(
+        '\n\x0bproxy.proto\x12\x05proto"&\n\x11GetKVMDataRequest\x12\x11\n\tblade_num\x18\x01 \x01(\x03"\'\n\x12GetKVMDataResponse\x12\x11\n\targuments\x18\x01 \x03(\t2M\n\x08\x43MCProxy\x12\x41\n\nGetKVMData\x12\x18.proto.GetKVMDataRequest\x1a\x19.proto.GetKVMDataResponseb\x06proto3'
+    ),
 )
 
 
-
-
 _GETKVMDATAREQUEST = _descriptor.Descriptor(
-  name='GetKVMDataRequest',
-  full_name='proto.GetKVMDataRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='blade_num', full_name='proto.GetKVMDataRequest.blade_num', index=0,
-      number=1, type=3, cpp_type=2, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=22,
-  serialized_end=60,
+    name="GetKVMDataRequest",
+    full_name="proto.GetKVMDataRequest",
+    filename=None,
+    file=DESCRIPTOR,
+    containing_type=None,
+    fields=[
+        _descriptor.FieldDescriptor(
+            name="blade_num",
+            full_name="proto.GetKVMDataRequest.blade_num",
+            index=0,
+            number=1,
+            type=3,
+            cpp_type=2,
+            label=1,
+            has_default_value=False,
+            default_value=0,
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+        ),
+    ],
+    extensions=[],
+    nested_types=[],
+    enum_types=[],
+    serialized_options=None,
+    is_extendable=False,
+    syntax="proto3",
+    extension_ranges=[],
+    oneofs=[],
+    serialized_start=22,
+    serialized_end=60,
 )
 
 
 _GETKVMDATARESPONSE = _descriptor.Descriptor(
-  name='GetKVMDataResponse',
-  full_name='proto.GetKVMDataResponse',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='arguments', full_name='proto.GetKVMDataResponse.arguments', index=0,
-      number=1, type=9, cpp_type=9, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=62,
-  serialized_end=101,
+    name="GetKVMDataResponse",
+    full_name="proto.GetKVMDataResponse",
+    filename=None,
+    file=DESCRIPTOR,
+    containing_type=None,
+    fields=[
+        _descriptor.FieldDescriptor(
+            name="arguments",
+            full_name="proto.GetKVMDataResponse.arguments",
+            index=0,
+            number=1,
+            type=9,
+            cpp_type=9,
+            label=3,
+            has_default_value=False,
+            default_value=[],
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+        ),
+    ],
+    extensions=[],
+    nested_types=[],
+    enum_types=[],
+    serialized_options=None,
+    is_extendable=False,
+    syntax="proto3",
+    extension_ranges=[],
+    oneofs=[],
+    serialized_start=62,
+    serialized_end=101,
 )
 
-DESCRIPTOR.message_types_by_name['GetKVMDataRequest'] = _GETKVMDATAREQUEST
-DESCRIPTOR.message_types_by_name['GetKVMDataResponse'] = _GETKVMDATARESPONSE
+DESCRIPTOR.message_types_by_name["GetKVMDataRequest"] = _GETKVMDATAREQUEST
+DESCRIPTOR.message_types_by_name["GetKVMDataResponse"] = _GETKVMDATARESPONSE
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
-GetKVMDataRequest = _reflection.GeneratedProtocolMessageType('GetKVMDataRequest', (_message.Message,), dict(
-  DESCRIPTOR = _GETKVMDATAREQUEST,
-  __module__ = 'proxy_pb2'
-  # @@protoc_insertion_point(class_scope:proto.GetKVMDataRequest)
-  ))
+GetKVMDataRequest = _reflection.GeneratedProtocolMessageType(
+    "GetKVMDataRequest",
+    (_message.Message,),
+    dict(
+        DESCRIPTOR=_GETKVMDATAREQUEST,
+        __module__="proxy_pb2"
+        # @@protoc_insertion_point(class_scope:proto.GetKVMDataRequest)
+    ),
+)
 _sym_db.RegisterMessage(GetKVMDataRequest)
 
-GetKVMDataResponse = _reflection.GeneratedProtocolMessageType('GetKVMDataResponse', (_message.Message,), dict(
-  DESCRIPTOR = _GETKVMDATARESPONSE,
-  __module__ = 'proxy_pb2'
-  # @@protoc_insertion_point(class_scope:proto.GetKVMDataResponse)
-  ))
+GetKVMDataResponse = _reflection.GeneratedProtocolMessageType(
+    "GetKVMDataResponse",
+    (_message.Message,),
+    dict(
+        DESCRIPTOR=_GETKVMDATARESPONSE,
+        __module__="proxy_pb2"
+        # @@protoc_insertion_point(class_scope:proto.GetKVMDataResponse)
+    ),
+)
 _sym_db.RegisterMessage(GetKVMDataResponse)
 
 
-
 _CMCPROXY = _descriptor.ServiceDescriptor(
-  name='CMCProxy',
-  full_name='proto.CMCProxy',
-  file=DESCRIPTOR,
-  index=0,
-  serialized_options=None,
-  serialized_start=103,
-  serialized_end=180,
-  methods=[
-  _descriptor.MethodDescriptor(
-    name='GetKVMData',
-    full_name='proto.CMCProxy.GetKVMData',
+    name="CMCProxy",
+    full_name="proto.CMCProxy",
+    file=DESCRIPTOR,
     index=0,
-    containing_service=None,
-    input_type=_GETKVMDATAREQUEST,
-    output_type=_GETKVMDATARESPONSE,
     serialized_options=None,
-  ),
-])
+    serialized_start=103,
+    serialized_end=180,
+    methods=[
+        _descriptor.MethodDescriptor(
+            name="GetKVMData",
+            full_name="proto.CMCProxy.GetKVMData",
+            index=0,
+            containing_service=None,
+            input_type=_GETKVMDATAREQUEST,
+            output_type=_GETKVMDATARESPONSE,
+            serialized_options=None,
+        ),
+    ],
+)
 _sym_db.RegisterServiceDescriptor(_CMCPROXY)
 
-DESCRIPTOR.services_by_name['CMCProxy'] = _CMCPROXY
+DESCRIPTOR.services_by_name["CMCProxy"] = _CMCPROXY
 
 # @@protoc_insertion_point(module_scope)
