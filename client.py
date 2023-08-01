@@ -104,6 +104,7 @@ class KVMClient:
 
     def connect(self):
         self.ssl_context = ssl._create_unverified_context()
+        self.ssl_context.set_ciphers("DEFAULT")
 
         self.video_socket = socket.create_connection((self.address, self.video_port))
 
